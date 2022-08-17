@@ -8,7 +8,7 @@ pub fn string_to_yaml(input: String) -> Vec<Yaml> {
 }
 
 pub fn parse_checks(yaml_document: &Yaml) -> (Vec<Check>, Vec<ParsingError>) {
-    let (parser_checks, parsing_errors): (Vec<_>, Vec<_>) = get_checks(&yaml_document)
+    let (parser_checks, parsing_errors): (Vec<_>, Vec<_>) = get_checks(yaml_document)
         .into_iter()
         .partition(Result::is_ok);
 
@@ -16,8 +16,7 @@ pub fn parse_checks(yaml_document: &Yaml) -> (Vec<Check>, Vec<ParsingError>) {
         parser_checks.into_iter().map(Result::unwrap).collect(),
         parsing_errors
             .into_iter()
-            .map(Result::unwrap_err)
-            .flatten()
+            .flat_map(Result::unwrap_err)
             .collect(),
     )
 }
@@ -94,11 +93,11 @@ pub fn get_checks(yaml_document: &Yaml) -> Vec<Result<Check, Vec<ParsingError>>>
 
             match errors.is_empty() {
                 true => Ok(Check {
-                    id: id,
-                    name: name,
-                    group: group,
-                    description: description,
-                    remediation: remediation,
+                    id,
+                    name,
+                    group,
+                    description,
+                    remediation,
                     expectations: vec![],
                     facts: fact_declarations,
                 }),
@@ -174,8 +173,8 @@ fn fact_declarations(yaml_hash: &Hash) -> Result<Vec<FactDeclaration>, Vec<Parsi
 
             match errors.is_empty() {
                 true => Ok(FactDeclaration {
-                    fact_name: fact_name,
-                    gatherer: gatherer,
+                    fact_name,
+                    gatherer,
                     arguments: vec![argument],
                 }),
                 false => Err(errors),
