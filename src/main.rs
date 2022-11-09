@@ -9,10 +9,8 @@ use std::process;
 pub mod dsl;
 
 use dsl::display;
-use dsl::parsing;
-use dsl::types::ParsingError;
+use dsl::types::{Check, ValidationError};
 use dsl::validation;
-use dsl::validation::Validate;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -49,51 +47,53 @@ fn get_input(file: Option<String>) -> String {
     payload
 }
 
-fn main() {
+fn main() -> Result<(), serde_yaml::Error> {
     let args = Args::parse();
 
     match args.command {
         Commands::Lint { file } => {
             let input = get_input(file);
+            let json_value: serde_json::Value = serde_yaml::from_str(&input)?;
+            let deserialization_result = serde_yaml::from_str::<Check>(&input);
 
-            let yaml_documents = parsing::string_to_yaml(input);
+            if let Err(ref error) = deserialization_result {
+                println!("{} - {}", validation::error_header("Parse error"), error);
+                process::exit(1)
+            }
 
-            let (checks, parsing_errors) = parsing::parse_checks(&yaml_documents[0]);
+            let check = deserialization_result.unwrap();
+            let check_id = check.id;
+            let json_schema = validation::get_json_schema();
+            let validation_result = validation::validate(&json_value, &check_id, &json_schema);
 
-            let (_, validation_errors): (Vec<_>, Vec<_>) = checks
-                .into_iter()
-                .map(|check| check.validate())
-                .partition(Result::is_ok);
-
-            let exit_code = match parsing_errors.is_empty() && validation_errors.is_empty() {
-                true => 0,
-                false => 1,
+            let exit_code = match validation_result {
+                Ok(_) => 0,
+                Err(validation_errors) => {
+                    validation_errors.iter().for_each(
+                        |ValidationError {
+                             check_id,
+                             error,
+                             instance_path,
+                         }| {
+                            println!("{} - {}", validation::error_header(&check_id), error);
+                            println!("  path: {}\n", instance_path);
+                        },
+                    );
+                    1
+                }
             };
-
-            let _ = parsing_errors
-                .into_iter()
-                .for_each(|ParsingError { check_id, error }| {
-                    println!("{} - {}", validation::error_header(&check_id), error);
-                });
-
-            let _ = validation_errors
-                .into_iter()
-                .map(Result::unwrap_err)
-                .for_each(|errors| {
-                    errors.iter().for_each(|error| println!("{}", error));
-                });
 
             process::exit(exit_code);
         }
 
         Commands::Show { file } => {
             let input = get_input(file);
-            let yaml_documents = parsing::string_to_yaml(input);
-            let (checks, _) = parsing::parse_checks(&yaml_documents[0]);
 
-            checks.into_iter().for_each(|check| {
-                display::print_check(check);
-            })
+            let check: Check = serde_yaml::from_str(&input)?;
+
+            display::print_check(check);
         }
     }
+
+    Ok(())
 }
